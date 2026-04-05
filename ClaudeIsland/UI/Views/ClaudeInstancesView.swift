@@ -222,6 +222,13 @@ struct InstanceRow: View {
                         .foregroundColor(.white.opacity(0.4))
                         .lineLimit(1)
                 }
+
+                // Token usage (output tokens)
+                if !session.tokenUsage.isEmpty && !isWaitingForApproval {
+                    Text("\(session.formattedOutput) output tokens")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(TerminalColors.dim)
+                }
             }
 
             Spacer(minLength: 0)

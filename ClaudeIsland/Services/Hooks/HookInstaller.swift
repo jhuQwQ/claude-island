@@ -15,6 +15,7 @@ struct HookInstaller {
             .appendingPathComponent(".claude")
         let hooksDir = claudeDir.appendingPathComponent("hooks")
         let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+        let statuslineScript = claudeDir.appendingPathComponent("claude-island-statusline.sh")
         let settings = claudeDir.appendingPathComponent("settings.json")
 
         try? FileManager.default.createDirectory(
@@ -28,6 +29,16 @@ struct HookInstaller {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
                 ofItemAtPath: pythonScript.path
+            )
+        }
+
+        // Install statusline script for rate limit tracking
+        if let bundled = Bundle.main.url(forResource: "claude-island-statusline", withExtension: "sh") {
+            try? FileManager.default.removeItem(at: statuslineScript)
+            try? FileManager.default.copyItem(at: bundled, to: statuslineScript)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: statuslineScript.path
             )
         }
 
@@ -90,6 +101,14 @@ struct HookInstaller {
 
         json["hooks"] = hooks
 
+        // Install statusline if not already set
+        if json["statusLine"] == nil {
+            json["statusLine"] = [
+                "type": "command",
+                "command": "~/.claude/claude-island-statusline.sh"
+            ] as [String: Any]
+        }
+
         if let data = try? JSONSerialization.data(
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
@@ -133,9 +152,11 @@ struct HookInstaller {
             .appendingPathComponent(".claude")
         let hooksDir = claudeDir.appendingPathComponent("hooks")
         let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+        let statuslineScript = claudeDir.appendingPathComponent("claude-island-statusline.sh")
         let settings = claudeDir.appendingPathComponent("settings.json")
 
         try? FileManager.default.removeItem(at: pythonScript)
+        try? FileManager.default.removeItem(at: statuslineScript)
 
         guard let data = try? Data(contentsOf: settings),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -167,6 +188,13 @@ struct HookInstaller {
             json.removeValue(forKey: "hooks")
         } else {
             json["hooks"] = hooks
+        }
+
+        // Remove statusline if it's ours
+        if let statusLine = json["statusLine"] as? [String: Any],
+           let cmd = statusLine["command"] as? String,
+           cmd.contains("claude-island-statusline") {
+            json.removeValue(forKey: "statusLine")
         }
 
         if let data = try? JSONSerialization.data(

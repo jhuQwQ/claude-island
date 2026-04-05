@@ -47,6 +47,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     var conversationInfo: ConversationInfo
 
+    // MARK: - Token Usage (from JSONL parsing)
+
+    var tokenUsage: TokenUsage
+
     // MARK: - Clear Reconciliation
 
     /// When true, the next file update should reconcile chatItems with parser state
@@ -79,6 +83,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
             summary: nil, lastMessage: nil, lastMessageRole: nil,
             lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil
         ),
+        tokenUsage: TokenUsage = TokenUsage(),
         needsClearReconciliation: Bool = false,
         lastActivity: Date = Date(),
         createdAt: Date = Date()
@@ -94,6 +99,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.toolTracker = toolTracker
         self.subagentState = subagentState
         self.conversationInfo = conversationInfo
+        self.tokenUsage = tokenUsage
         self.needsClearReconciliation = needsClearReconciliation
         self.lastActivity = lastActivity
         self.createdAt = createdAt
@@ -183,6 +189,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var canInteract: Bool {
         phase.needsAttention
     }
+
+    // MARK: - Token Usage Formatting
+
+    var formattedOutput: String { TokenFormatter.format(tokenUsage.outputTokens) }
 }
 
 // MARK: - Tool Tracker

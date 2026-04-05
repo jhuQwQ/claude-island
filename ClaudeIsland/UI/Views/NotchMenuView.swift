@@ -22,6 +22,7 @@ struct NotchMenuView: View {
     @State private var launchAtLogin: Bool = false
 
     var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
         VStack(spacing: 4) {
             // Back button
             MenuRow(
@@ -82,6 +83,14 @@ struct NotchMenuView: View {
                 .background(Color.white.opacity(0.08))
                 .padding(.vertical, 4)
 
+            // Usage tracking
+            RateLimitRow()
+            WeeklyUsageRow()
+
+            Divider()
+                .background(Color.white.opacity(0.08))
+                .padding(.vertical, 4)
+
             // About
             UpdateRow(updateManager: updateManager)
 
@@ -108,6 +117,7 @@ struct NotchMenuView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             refreshStates()
@@ -522,5 +532,148 @@ struct MenuToggleRow: View {
 
     private var textColor: Color {
         .white.opacity(isHovered ? 1.0 : 0.7)
+    }
+}
+
+// MARK: - Weekly Usage Row
+
+struct WeeklyUsageRow: View {
+    @State private var weeklyUsage: WeeklyUsageTracker.WeeklyUsage?
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "chart.bar")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+                .frame(width: 16)
+
+            Text("This Week")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+
+            Spacer()
+
+            if let usage = weeklyUsage {
+                HStack(spacing: 6) {
+                    Text("\(TokenFormatter.format(usage.totalOutputTokens)) out")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                    Text("·")
+                        .foregroundColor(.white.opacity(0.2))
+                    Text("\(usage.sessionCount) sessions")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+            } else {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 12, height: 12)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+        )
+        .onHover { isHovered = $0 }
+        .task {
+            weeklyUsage = await WeeklyUsageTracker.shared.getWeeklyUsage()
+        }
+    }
+}
+
+// MARK: - Rate Limit Row
+
+struct RateLimitRow: View {
+    @State private var rateLimits: RateLimitData?
+    @State private var isHovered = false
+
+    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        if let limits = rateLimits {
+            VStack(spacing: 6) {
+                // Session (5-hour) limit
+                if let sessionPct = limits.sessionUsedPercentage {
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 12))
+                            .foregroundColor(textColor)
+                            .frame(width: 16)
+
+                        Text("Session")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(textColor)
+
+                        Spacer()
+
+                        Text(limits.sessionResetText ?? "")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.25))
+
+                        Text("\(Int(sessionPct))%")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(colorForPercentage(sessionPct))
+                    }
+
+                    ProgressView(value: min(sessionPct / 100.0, 1.0))
+                        .tint(colorForPercentage(sessionPct))
+                        .frame(height: 2)
+                        .padding(.horizontal, 4)
+                }
+
+                // Weekly (7-day) limit
+                if let weeklyPct = limits.weeklyUsedPercentage {
+                    HStack(spacing: 10) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12))
+                            .foregroundColor(textColor)
+                            .frame(width: 16)
+
+                        Text("Weekly")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(textColor)
+
+                        Spacer()
+
+                        Text(limits.weeklyResetText ?? "")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.25))
+
+                        Text("\(Int(weeklyPct))%")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(colorForPercentage(weeklyPct))
+                    }
+
+                    ProgressView(value: min(weeklyPct / 100.0, 1.0))
+                        .tint(colorForPercentage(weeklyPct))
+                        .frame(height: 2)
+                        .padding(.horizontal, 4)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+            )
+            .onHover { isHovered = $0 }
+        }
+    }
+
+    private var textColor: Color {
+        .white.opacity(isHovered ? 1.0 : 0.7)
+    }
+
+    private func colorForPercentage(_ pct: Double) -> Color {
+        if pct > 90 { return TerminalColors.red }
+        if pct > 70 { return TerminalColors.amber }
+        return TerminalColors.green
+    }
+
+    init() {
+        _rateLimits = State(initialValue: RateLimitReader.read())
     }
 }

@@ -78,14 +78,15 @@ actor SessionStore {
         case .loadHistory(let sessionId, let cwd):
             await loadHistoryFromFile(sessionId: sessionId, cwd: cwd)
 
-        case .historyLoaded(let sessionId, let messages, let completedTools, let toolResults, let structuredResults, let conversationInfo):
+        case .historyLoaded(let sessionId, let messages, let completedTools, let toolResults, let structuredResults, let conversationInfo, let tokenUsage):
             await processHistoryLoaded(
                 sessionId: sessionId,
                 messages: messages,
                 completedTools: completedTools,
                 toolResults: toolResults,
                 structuredResults: structuredResults,
-                conversationInfo: conversationInfo
+                conversationInfo: conversationInfo,
+                tokenUsage: tokenUsage
             )
 
         case .toolCompleted(let sessionId, let toolUseId, let result):
@@ -497,6 +498,7 @@ actor SessionStore {
             cwd: session.cwd
         )
         session.conversationInfo = conversationInfo
+        session.tokenUsage = payload.tokenUsage
 
         // Handle /clear reconciliation - remove items that no longer exist in parser state
         if session.needsClearReconciliation {
@@ -863,6 +865,7 @@ actor SessionStore {
             sessionId: sessionId,
             cwd: cwd
         )
+        let tokenUsage = await ConversationParser.shared.tokenUsage(for: sessionId)
 
         // Process loaded history
         await process(.historyLoaded(
@@ -871,7 +874,8 @@ actor SessionStore {
             completedTools: completedTools,
             toolResults: toolResults,
             structuredResults: structuredResults,
-            conversationInfo: conversationInfo
+            conversationInfo: conversationInfo,
+            tokenUsage: tokenUsage
         ))
     }
 
@@ -881,12 +885,14 @@ actor SessionStore {
         completedTools: Set<String>,
         toolResults: [String: ConversationParser.ToolResult],
         structuredResults: [String: ToolResultData],
-        conversationInfo: ConversationInfo
+        conversationInfo: ConversationInfo,
+        tokenUsage: TokenUsage
     ) async {
         guard var session = sessions[sessionId] else { return }
 
         // Update conversationInfo (summary, lastMessage, etc.)
         session.conversationInfo = conversationInfo
+        session.tokenUsage = tokenUsage
 
         // Convert messages to chat items
         let existingIds = Set(session.chatItems.map { $0.id })
@@ -948,7 +954,8 @@ actor SessionStore {
                 isIncremental: !result.clearDetected,
                 completedToolIds: result.completedToolIds,
                 toolResults: result.toolResults,
-                structuredResults: result.structuredResults
+                structuredResults: result.structuredResults,
+                tokenUsage: result.tokenUsage
             )
 
             await self?.process(.fileUpdated(payload))

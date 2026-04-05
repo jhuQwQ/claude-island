@@ -43,6 +43,7 @@ actor ConversationParser {
         var completedToolIds: Set<String> = []  // Tools that have received results
         var toolResults: [String: ToolResult] = [:]  // Tool results keyed by tool_use_id
         var structuredResults: [String: ToolResultData] = [:]  // Structured results keyed by tool_use_id
+        var tokenUsage: TokenUsage = TokenUsage()  // Accumulated token usage from assistant messages
         var lastClearOffset: UInt64 = 0  // Offset of last /clear command (0 = none or at start)
         var clearPending: Bool = false  // True if a /clear was just detected
     }
@@ -284,6 +285,7 @@ actor ConversationParser {
         let toolResults: [String: ToolResult]
         let structuredResults: [String: ToolResultData]
         let clearDetected: Bool
+        let tokenUsage: TokenUsage
     }
 
     /// Parse only NEW messages since last call (efficient incremental updates)
@@ -297,7 +299,8 @@ actor ConversationParser {
                 completedToolIds: [],
                 toolResults: [:],
                 structuredResults: [:],
-                clearDetected: false
+                clearDetected: false,
+                tokenUsage: TokenUsage()
             )
         }
 
@@ -315,7 +318,8 @@ actor ConversationParser {
             completedToolIds: state.completedToolIds,
             toolResults: state.toolResults,
             structuredResults: state.structuredResults,
-            clearDetected: clearDetected
+            clearDetected: clearDetected,
+            tokenUsage: state.tokenUsage
         )
     }
 
@@ -365,6 +369,7 @@ actor ConversationParser {
                 state.completedToolIds = []
                 state.toolResults = [:]
                 state.structuredResults = [:]
+                state.tokenUsage = TokenUsage()
 
                 if isIncrementalRead {
                     state.clearPending = true
@@ -414,10 +419,24 @@ actor ConversationParser {
                 }
             } else if line.contains("\"type\":\"user\"") || line.contains("\"type\":\"assistant\"") {
                 if let lineData = line.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                   let message = parseMessageLine(json, seenToolIds: &state.seenToolIds, toolIdToName: &state.toolIdToName) {
-                    newMessages.append(message)
-                    state.messages.append(message)
+                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] {
+                    // Extract token usage from assistant messages
+                    if json["type"] as? String == "assistant",
+                       let messageDict = json["message"] as? [String: Any],
+                       let usage = messageDict["usage"] as? [String: Any] {
+                        let tokens = TokenUsage(
+                            inputTokens: usage["input_tokens"] as? Int ?? 0,
+                            cacheCreationInputTokens: usage["cache_creation_input_tokens"] as? Int ?? 0,
+                            cacheReadInputTokens: usage["cache_read_input_tokens"] as? Int ?? 0,
+                            outputTokens: usage["output_tokens"] as? Int ?? 0
+                        )
+                        state.tokenUsage.accumulate(tokens)
+                    }
+
+                    if let message = parseMessageLine(json, seenToolIds: &state.seenToolIds, toolIdToName: &state.toolIdToName) {
+                        newMessages.append(message)
+                        state.messages.append(message)
+                    }
                 }
             }
         }
@@ -439,6 +458,11 @@ actor ConversationParser {
     /// Get structured tool results for a session
     func structuredResults(for sessionId: String) -> [String: ToolResultData] {
         return incrementalState[sessionId]?.structuredResults ?? [:]
+    }
+
+    /// Get accumulated token usage for a session
+    func tokenUsage(for sessionId: String) -> TokenUsage {
+        return incrementalState[sessionId]?.tokenUsage ?? TokenUsage()
     }
 
     /// Reset incremental state for a session (call when reloading)

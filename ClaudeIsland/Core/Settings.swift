@@ -55,4 +55,5 @@ enum AppSettings {
             defaults.set(newValue.rawValue, forKey: Keys.notificationSound)
         }
     }
+
 }
